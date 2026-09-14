@@ -33,16 +33,15 @@
       },
       {
         "group": "API playground",
-        "openapi": "openapi.yaml",
         "pages": [
-          "GET /v1/chats",
-          "POST /v1/chats",
-          "GET /v1/chats/{chatId}/messages",
-          "POST /v1/chats/{chatId}/turns",
-          "POST /v1/chat/completions",
-          "POST /v1/tools/{toolName}",
-          "GET /v1/runs/{runId}",
-          "POST /v1/runs/{runId}/waitpoints/{token}/resume"
+          "api/list-chats",
+          "api/create-chat",
+          "api/list-messages",
+          "api/send-turn",
+          "api/completions",
+          "api/run-tool",
+          "api/get-run",
+          "api/resume-waitpoint"
         ]
       }
     ]

@@ -1,0 +1,6 @@
+---
+title: Send a turn
+openapi: POST /v1/chats/{chatId}/turns
+---
+
+Accepts the turn with **202**. Poll `GET /v1/runs/{runId}`. Ignore `realtime.pollUrl` if it starts with `/api`.
