@@ -12,7 +12,10 @@
   "api": {
     "openapi": ["openapi.yaml"],
     "mdx": {
-      "auth": "bearer"
+      "server": "https://agent-chat-backend.vercel.app",
+      "auth": {
+        "method": "bearer"
+      }
     }
   },
   "navigation": {
