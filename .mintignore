@@ -1,0 +1,12 @@
+app
+public
+node_modules
+.next
+.vercel
+package.json
+package-lock.json
+mdx-components.tsx
+next.config.mjs
+next-env.d.ts
+tsconfig.json
+vercel.json
