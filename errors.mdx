@@ -1,0 +1,47 @@
+---
+title: Errors and limits
+---
+
+Every error body looks like:
+
+```json
+{
+  "error": "Human message",
+  "message": "Human message",
+  "code": "CODE",
+  "traceId": "uuid"
+}
+```
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `UNAUTHORIZED` | 401 | Missing or invalid API key / Clerk token |
+| `VALIDATION` | 400 | Bad JSON or field |
+| `UNSUPPORTED_MODEL` | 400 | Model is not `openrouter/free` |
+| `NOT_FOUND` | 404 | Chat, run, tool, or key not yours / missing |
+| `INSUFFICIENT_CREDITS` | 402 | Wallet below admission reserve |
+| `ACTIVE_RUN` | 409 | Chat already has a non-terminal run |
+| `RATE_LIMITED` | 429 | More than 20 sends per minute |
+| `WAITPOINT_EXPIRED` | 409 / 4xx | Waitpoint timed out — send a new message |
+| `CONFIG` | 500 | Server missing Magica / Transloadit / Clerk keys |
+| `INTERNAL` | 500 | Unexpected server error |
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Model | `openrouter/free` only |
+| Message length | 32,000 characters |
+| New-user grant | 10,000,000 micro-credits |
+| Admission reserve | 1 |
+| Rate limit | 20 / minute / user |
+| Chat page size | 30 |
+| Message page size | 50 |
+| Attachments per turn | 8 |
+| Upload file size | 0.5 GB |
+| Upload quota | 5 GB / user / month |
+| Waitpoint TTL | 30 minutes |
+| Chat-only model timeout | 12 seconds |
+| Max tool iterations | 12 |
+
+Uploads are signed through the **app** (`/api/uploads/*` + Transloadit), not `/v1`. Pass the resulting attachment ids into `POST /v1/chats/:chatId/turns`.

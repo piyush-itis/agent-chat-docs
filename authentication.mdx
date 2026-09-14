@@ -1,0 +1,42 @@
+---
+title: Authentication
+---
+
+Create an API key in the web app: [Settings](https://agent-chat-frontend.vercel.app/settings) while signed in. The `gx_live_…` secret is shown **once**.
+
+Keys are SHA-256 hashed at rest. They share that user's credit ledger and upload quota. Cross-tenant ids return a non-leaking `404`.
+
+```bash
+curl https://agent-chat-backend.vercel.app/v1/chats \
+  -H "Authorization: Bearer gx_live_..."
+```
+
+```bash
+curl -X POST https://agent-chat-backend.vercel.app/v1/chat/completions \
+  -H "Authorization: Bearer gx_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{"model":"openrouter/free","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+Missing or invalid keys return `401` with `code: "UNAUTHORIZED"`.
+
+## Try it in these docs
+
+Open **API playground** in the sidebar. Pick an endpoint, paste your `gx_live_…` key in **Authorization**, and click send. Mintlify proxies the request to `https://agent-chat-backend.vercel.app`, so browser CORS does not apply.
+
+Create a chat first (`POST /v1/chats`), then send a turn or completions. Poll `GET /v1/runs/{runId}` until `complete`.
+
+Rate limit: **20 requests per minute per user**. Over that: `429 RATE_LIMITED`.
+
+## App routes vs public routes
+
+| Surface | Auth | Who uses it |
+| --- | --- | --- |
+| `/api/*` | Clerk session JWT | Magica web app |
+| `/v1/*` | `Bearer gx_live_…` | Your scripts and integrations |
+
+Mint keys from the app (`POST /api/me/api-keys` with a Clerk token). You cannot mint a key using only a `gx_live_` key.
+
+## CORS
+
+The backend allows `FRONTEND_ORIGIN` only (production: `https://agent-chat-frontend.vercel.app`). Browser `fetch` from another site will fail. Use curl, Node, or your own server.

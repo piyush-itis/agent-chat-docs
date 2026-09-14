@@ -1,0 +1,500 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Galaxy Agent Chat API",
+    "version": "1.0.0",
+    "description": "Public `/v1` API. Requests accept with HTTP 202 and a `runId`. Poll `GET /v1/runs/{runId}` until the run is terminal. Use a `gx_live_` key from the web app Settings page."
+  },
+  "servers": [
+    {
+      "url": "https://agent-chat-backend.vercel.app",
+      "description": "Production"
+    },
+    {
+      "url": "http://localhost:3001",
+      "description": "Local backend"
+    }
+  ],
+  "security": [{ "bearerAuth": [] }],
+  "tags": [
+    { "name": "Chats" },
+    { "name": "Turns" },
+    { "name": "Runs" },
+    { "name": "Tools" }
+  ],
+  "paths": {
+    "/v1/chats": {
+      "get": {
+        "tags": ["Chats"],
+        "summary": "List chats",
+        "operationId": "listChats",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Optional title search"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Chat page",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ChatList" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Chats"],
+        "summary": "Create a chat",
+        "operationId": "createChat",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string", "maxLength": 200, "example": "Red bicycle" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created chat",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Chat" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/chats/{chatId}/messages": {
+      "get": {
+        "tags": ["Chats"],
+        "summary": "List messages",
+        "operationId": "listMessages",
+        "parameters": [
+          { "$ref": "#/components/parameters/chatId" },
+          { "name": "cursor", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest messages first",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MessageList" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/chats/{chatId}/turns": {
+      "post": {
+        "tags": ["Turns"],
+        "summary": "Send a turn",
+        "description": "Accepts the turn with 202. Poll GET /v1/runs/{runId}. Do not follow realtime.pollUrl if it starts with /api — that path is for the Clerk web app.",
+        "operationId": "sendTurn",
+        "parameters": [{ "$ref": "#/components/parameters/chatId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SendTurnRequest" },
+              "example": {
+                "text": "say hi",
+                "model": "openrouter/free",
+                "clientIdempotencyKey": "try-001",
+                "planMode": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Queued",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SendTurnResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/InsufficientCredits" },
+          "409": { "$ref": "#/components/responses/ActiveRun" }
+        }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "tags": ["Turns"],
+        "summary": "Chat completions (202, not a stream)",
+        "description": "OpenAI-shaped body. Still returns 202 + runId. Uses the last user message as the turn text. Creates a chat if chatId is omitted.",
+        "operationId": "chatCompletions",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CompletionsRequest" },
+              "example": {
+                "model": "openrouter/free",
+                "messages": [{ "role": "user", "content": "say hi" }]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Queued",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SendTurnResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/InsufficientCredits" }
+        }
+      }
+    },
+    "/v1/runs/{runId}": {
+      "get": {
+        "tags": ["Runs"],
+        "summary": "Poll a run",
+        "operationId": "getRun",
+        "parameters": [{ "$ref": "#/components/parameters/runId" }],
+        "responses": {
+          "200": {
+            "description": "Run view",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Run" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/runs/{runId}/waitpoints/{token}/resume": {
+      "post": {
+        "tags": ["Runs"],
+        "summary": "Resume a waitpoint",
+        "operationId": "resumeWaitpoint",
+        "parameters": [
+          { "$ref": "#/components/parameters/runId" },
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ResumeWaitpointRequest" },
+              "example": {
+                "resumeKey": "from-waitpoint-payload",
+                "decision": "approved"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Resumed" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/v1/tools/{toolName}": {
+      "post": {
+        "tags": ["Tools"],
+        "summary": "Queue a Magica tool",
+        "description": "toolName must be crop_image, gpt_image_2, or merge_videos. Returns 202. Poll the run.",
+        "operationId": "runPublicTool",
+        "parameters": [
+          {
+            "name": "toolName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["crop_image", "gpt_image_2", "merge_videos"]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PublicToolRequest" },
+              "examples": {
+                "generate": {
+                  "summary": "GPT Image 2 text",
+                  "value": {
+                    "input": { "mode": "text", "prompt": "a red bicycle" }
+                  }
+                },
+                "crop": {
+                  "summary": "Crop",
+                  "value": {
+                    "input": {
+                      "image_url": "https://example.com/photo.png",
+                      "crop": { "x": 0, "y": 0, "width": 50, "height": 50 },
+                      "unit": "percent"
+                    }
+                  }
+                },
+                "merge": {
+                  "summary": "Merge videos",
+                  "value": {
+                    "input": {
+                      "video_urls": [
+                        "https://example.com/a.mp4",
+                        "https://example.com/b.mp4"
+                      ],
+                      "transition": "none"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Queued",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SendTurnResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/InsufficientCredits" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "gx_live_",
+        "description": "API key from https://agent-chat-frontend.vercel.app/settings. Shown once at create time."
+      }
+    },
+    "parameters": {
+      "chatId": {
+        "name": "chatId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      "runId": {
+        "name": "runId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["error", "message", "code", "traceId"],
+        "properties": {
+          "error": { "type": "string" },
+          "message": { "type": "string" },
+          "code": { "type": "string" },
+          "traceId": { "type": "string" }
+        }
+      },
+      "Chat": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "favorited": { "type": "boolean" },
+          "pinned": { "type": "boolean" },
+          "activeRunId": { "type": ["string", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ChatList": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/Chat" } },
+          "nextCursor": { "type": ["string", "null"] }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "chatId": { "type": "string" },
+          "runId": { "type": ["string", "null"] },
+          "role": { "type": "string", "enum": ["user", "assistant", "system", "tool"] },
+          "status": { "type": "string", "enum": ["success", "failed", "cancelled"] },
+          "blocks": { "type": "array", "items": { "type": "object" } },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MessageList": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/Message" } },
+          "nextCursor": { "type": ["string", "null"] }
+        }
+      },
+      "SendTurnRequest": {
+        "type": "object",
+        "required": ["text", "clientIdempotencyKey"],
+        "properties": {
+          "text": { "type": "string", "minLength": 1, "maxLength": 32000 },
+          "model": { "type": "string", "enum": ["openrouter/free"], "default": "openrouter/free" },
+          "clientIdempotencyKey": { "type": "string", "minLength": 8, "maxLength": 128 },
+          "planMode": { "type": "boolean", "default": false },
+          "attachmentIds": {
+            "type": "array",
+            "maxItems": 8,
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "CompletionsRequest": {
+        "type": "object",
+        "required": ["messages"],
+        "properties": {
+          "model": { "type": "string", "enum": ["openrouter/free"], "default": "openrouter/free" },
+          "chatId": { "type": "string" },
+          "clientIdempotencyKey": { "type": "string" },
+          "planMode": { "type": "boolean" },
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["role", "content"],
+              "properties": {
+                "role": { "type": "string", "enum": ["user", "assistant", "system"] },
+                "content": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "SendTurnResponse": {
+        "type": "object",
+        "properties": {
+          "chatId": { "type": "string" },
+          "messageId": { "type": "string" },
+          "runId": { "type": "string" },
+          "realtime": {
+            "type": "object",
+            "properties": {
+              "transport": { "type": "string", "enum": ["poll", "trigger"] },
+              "pollUrl": { "type": "string" }
+            }
+          }
+        }
+      },
+      "Run": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "chatId": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "thinking",
+              "working",
+              "waiting",
+              "stopping",
+              "complete",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "assistant": { "nullable": true },
+          "waitpoint": { "nullable": true },
+          "generatedAssets": { "type": "array", "items": { "type": "object" } },
+          "errorCode": { "type": ["string", "null"] },
+          "errorSafeMessage": { "type": ["string", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ResumeWaitpointRequest": {
+        "type": "object",
+        "required": ["resumeKey", "decision"],
+        "properties": {
+          "resumeKey": { "type": "string" },
+          "decision": { "type": "string", "enum": ["approved", "rejected"] },
+          "choiceId": { "type": "string" },
+          "answers": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      },
+      "PublicToolRequest": {
+        "type": "object",
+        "required": ["input"],
+        "properties": {
+          "chatId": { "type": "string" },
+          "input": { "type": "object", "additionalProperties": true }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing or invalid API key",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "NotFound": {
+        "description": "Not found or not yours",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "InsufficientCredits": {
+        "description": "Wallet too low",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "ActiveRun": {
+        "description": "Chat already has an active run",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      }
+    }
+  }
+}

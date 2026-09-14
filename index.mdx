@@ -1,0 +1,70 @@
+---
+title: Galaxy Agent Chat API
+description: Public REST for chats, completions, runs, waitpoints, and Magica tools.
+---
+
+The public API is the same engine as the Magica web app. It accepts work immediately (**HTTP 202** + `runId`). Trigger.dev runs the turn. Postgres is the source of truth.
+
+| | URL |
+| --- | --- |
+| **API base** | `https://agent-chat-backend.vercel.app` |
+| **Web app** | `https://agent-chat-frontend.vercel.app` |
+| **Local API** | `http://localhost:3001` |
+
+All public routes are under `/v1`. Example:
+
+`https://agent-chat-backend.vercel.app/v1/chats`
+
+`202` means **queued**, not finished. Poll `GET /v1/runs/:runId` until `complete`, `failed`, `cancelled`, or `waiting`.
+
+Do not treat this as an OpenAI streaming API. `POST /v1/chat/completions` still returns **202**.
+
+Interactive try-it panels live under **API playground** in the sidebar (generated from `openapi.json`). Paste a `gx_live_` key and send real requests.
+
+The **API playground** sidebar has a Try-it panel (curl / JS / Python). Paste `gx_live_…` as the bearer token and send against production.
+
+## How a turn works
+
+```
+Your client
+  → POST /v1/...  (API key)
+  ← 202 { chatId, messageId, runId }
+  → GET /v1/runs/:runId  (repeat)
+  ← status + assistant + assets
+```
+
+Vercel only accepts the request. Trigger executes `agent.turn` (and `magica.run` for image/video tools).
+
+## Routes
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET / POST | `/v1/chats` | List or create a chat |
+| GET | `/v1/chats/:chatId/messages` | Messages (newest first) |
+| POST | `/v1/chats/:chatId/turns` | Send a user turn → **202** |
+| POST | `/v1/chat/completions` | OpenAI-shaped body → **202** |
+| POST | `/v1/tools/:toolName` | Crop / GPT Image 2 / Merge → **202** |
+| GET | `/v1/runs/:runId` | Poll run, waitpoint, generated media |
+| POST | `/v1/runs/:runId/waitpoints/:token/resume` | Approve, reject, or answer |
+
+## Errors
+
+```json
+{
+  "error": "Not enough credits",
+  "message": "Not enough credits",
+  "code": "INSUFFICIENT_CREDITS",
+  "traceId": "..."
+}
+```
+
+Log `traceId` when you ask for help.
+
+## Product rules
+
+- Model is **only** `openrouter/free`. There is no paid fallback.
+- One active (non-terminal) run per chat. A second send returns `409 ACTIVE_RUN`.
+- Failed or cancelled turns cannot be resumed. Send a new message.
+- Credits are Magica micro-units. A new user grant is **10,000,000** (shown as **10.00M** in the app).
+- Uploads live on Transloadit URLs unless you configure S3 (`durableUrl`).
+- CORS on the API allows only `FRONTEND_ORIGIN` (the web app). Call `/v1` from a **server**, not from a random browser origin.

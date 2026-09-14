@@ -1,0 +1,35 @@
+---
+title: Webhooks
+---
+
+Register an endpoint in the web app [Settings](https://agent-chat-frontend.vercel.app/settings). The signing secret is shown once.
+
+Events: `agent.started`, `agent.completed`, `agent.failed`, `tool.completed`.
+
+A cancelled run is emitted as `agent.failed` with `data.status: "cancelled"`.
+
+Headers:
+
+- `X-Galaxy-Timestamp`
+- `X-Galaxy-Signature` (`sha256=<hex>` of `timestamp.rawBody`)
+- `X-Galaxy-Event`
+- `X-Galaxy-Event-Id`
+
+```text
+X-Galaxy-Signature = sha256=HMAC_SHA256(secret, "{timestamp}.{rawBody}")
+```
+
+Verify HMAC-SHA256 over the raw body. Deliveries are at-least-once with up to **4** attempts and exponential backoff. Respond `200` quickly. Use `X-Galaxy-Event-Id` for idempotency.
+
+Sample payload:
+
+```json
+{
+  "id": "evt_...",
+  "event": "agent.completed",
+  "createdAt": "2026-09-12T00:00:00.000Z",
+  "data": { "runId": "...", "chatId": "...", "status": "complete", "errorCode": null }
+}
+```
+
+Webhook registration itself is on `/api/me/webhooks` (Clerk), not `/v1`.

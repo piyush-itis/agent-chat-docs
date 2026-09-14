@@ -1,0 +1,435 @@
+openapi: 3.0.3
+info:
+  title: Galaxy Agent Chat API
+  version: "1.0.0"
+  description: |
+    Public `/v1` API. Requests accept with HTTP 202 and a `runId`.
+    Poll `GET /v1/runs/{runId}` until a terminal status.
+    Auth is an API key from the web app Settings page (`gx_live_…`).
+servers:
+  - url: https://agent-chat-backend.vercel.app
+    description: Production
+  - url: http://localhost:3001
+    description: Local
+security:
+  - bearerAuth: []
+tags:
+  - name: Chats
+  - name: Turns
+  - name: Runs
+  - name: Tools
+paths:
+  /v1/chats:
+    get:
+      tags: [Chats]
+      summary: List chats
+      operationId: listChats
+      parameters:
+        - $ref: "#/components/parameters/q"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: Chat page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Chats]
+      summary: Create a chat
+      operationId: createChat
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  maxLength: 200
+                  example: Red bicycle
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chat"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/chats/{chatId}/messages:
+    get:
+      tags: [Chats]
+      summary: List messages
+      operationId: listMessages
+      parameters:
+        - $ref: "#/components/parameters/chatId"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: Message page (newest first)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/chats/{chatId}/turns:
+    post:
+      tags: [Turns]
+      summary: Send a turn
+      description: Returns 202. Poll GET /v1/runs/{runId}. Do not follow realtime.pollUrl if it starts with /api.
+      operationId: sendTurn
+      parameters:
+        - $ref: "#/components/parameters/chatId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendTurnRequest"
+            example:
+              text: say hi
+              model: openrouter/free
+              clientIdempotencyKey: demo-turn-001
+              planMode: false
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendTurnResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /v1/chat/completions:
+    post:
+      tags: [Turns]
+      summary: OpenAI-shaped completions
+      description: Same engine as a turn. Not a stream. Returns 202.
+      operationId: chatCompletions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompletionsRequest"
+            example:
+              model: openrouter/free
+              messages:
+                - role: user
+                  content: Hello
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendTurnResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/tools/{toolName}:
+    post:
+      tags: [Tools]
+      summary: Queue a Magica tool
+      operationId: runTool
+      parameters:
+        - name: toolName
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [crop_image, gpt_image_2, merge_videos]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ToolRequest"
+            examples:
+              generate:
+                summary: GPT Image 2 text
+                value:
+                  input:
+                    mode: text
+                    prompt: a red bicycle
+              crop:
+                summary: Crop
+                value:
+                  input:
+                    image_url: https://example.com/photo.png
+                    crop: { x: 0, y: 0, width: 50, height: 50 }
+                    unit: percent
+              merge:
+                summary: Merge videos
+                value:
+                  input:
+                    video_urls:
+                      - https://example.com/a.mp4
+                      - https://example.com/b.mp4
+                    transition: none
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendTurnResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/runs/{runId}:
+    get:
+      tags: [Runs]
+      summary: Poll a run
+      operationId: getRun
+      parameters:
+        - $ref: "#/components/parameters/runId"
+      responses:
+        "200":
+          description: Run view
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/runs/{runId}/waitpoints/{token}/resume:
+    post:
+      tags: [Runs]
+      summary: Resume a waitpoint
+      operationId: resumeWaitpoint
+      parameters:
+        - $ref: "#/components/parameters/runId"
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResumeWaitpoint"
+            example:
+              resumeKey: resume_key_from_waitpoint
+              decision: approved
+      responses:
+        "200":
+          description: Applied or already applied
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: gx_live
+      description: "API key from the web app Settings page. Use Authorization Bearer gx_live_...."
+  parameters:
+    chatId:
+      name: chatId
+      in: path
+      required: true
+      schema:
+        type: string
+    runId:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+    cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+    q:
+      name: q
+      in: query
+      required: false
+      schema:
+        type: string
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            error: Missing bearer token
+            message: Missing bearer token
+            code: UNAUTHORIZED
+            traceId: 210272ed-277a-4b14-8797-99c0ac30ae38
+    NotFound:
+      description: Not found or not yours
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Error:
+      description: Request error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error, message, code, traceId]
+      properties:
+        error: { type: string }
+        message: { type: string }
+        code: { type: string }
+        traceId: { type: string }
+    Chat:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        favorited: { type: boolean }
+        pinned: { type: boolean }
+        activeRunId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ChatList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Chat"
+        nextCursor: { type: string, nullable: true }
+    Message:
+      type: object
+      properties:
+        id: { type: string }
+        chatId: { type: string }
+        runId: { type: string, nullable: true }
+        role: { type: string, enum: [user, assistant, system, tool] }
+        status: { type: string, enum: [success, failed, cancelled] }
+        blocks: { type: array, items: { type: object } }
+        createdAt: { type: string, format: date-time }
+    MessageList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+        nextCursor: { type: string, nullable: true }
+    SendTurnRequest:
+      type: object
+      required: [text, clientIdempotencyKey]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 32000, example: say hi }
+        model: { type: string, enum: [openrouter/free], default: openrouter/free }
+        clientIdempotencyKey: { type: string, minLength: 8, maxLength: 128, example: demo-turn-001 }
+        planMode: { type: boolean, default: false }
+        attachmentIds:
+          type: array
+          maxItems: 8
+          items: { type: string }
+    CompletionsRequest:
+      type: object
+      required: [messages]
+      properties:
+        model: { type: string, enum: [openrouter/free], default: openrouter/free }
+        chatId: { type: string }
+        clientIdempotencyKey: { type: string }
+        planMode: { type: boolean }
+        messages:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [role, content]
+            properties:
+              role: { type: string, enum: [user, assistant, system] }
+              content: { type: string }
+    SendTurnResponse:
+      type: object
+      properties:
+        chatId: { type: string }
+        messageId: { type: string }
+        runId: { type: string }
+        realtime:
+          type: object
+          properties:
+            transport: { type: string, enum: [poll, trigger] }
+            pollUrl: { type: string }
+    ToolRequest:
+      type: object
+      required: [input]
+      properties:
+        chatId: { type: string }
+        input:
+          type: object
+          additionalProperties: true
+    Run:
+      type: object
+      properties:
+        id: { type: string }
+        chatId: { type: string }
+        status:
+          type: string
+          enum: [queued, thinking, working, waiting, stopping, complete, failed, cancelled]
+        modelRequested: { type: string }
+        modelRouted: { type: string, nullable: true }
+        errorCode: { type: string, nullable: true }
+        errorSafeMessage: { type: string, nullable: true }
+        assistant: { type: object, nullable: true }
+        waitpoint: { type: object, nullable: true }
+        generatedAssets:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              kind: { type: string, enum: [image, video, audio] }
+              url: { type: string }
+              durableUrl: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    ResumeWaitpoint:
+      type: object
+      required: [resumeKey, decision]
+      properties:
+        resumeKey: { type: string, minLength: 8 }
+        decision: { type: string, enum: [approved, rejected] }
+        choiceId: { type: string }
+        answers:
+          type: object
+          additionalProperties: { type: string }

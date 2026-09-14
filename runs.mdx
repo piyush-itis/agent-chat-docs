@@ -1,0 +1,121 @@
+---
+title: Chats and runs
+---
+
+`202` on send and tool routes means the run was **accepted**. Poll `GET /v1/runs/:runId` until a terminal status.
+
+Always poll **`/v1/runs/:runId`** with your API key. The `realtime.pollUrl` field may say `/api/runs/:runId` (that path is for the Clerk web app). Ignore it from a public-API client.
+
+## Create and list chats
+
+`POST /v1/chats`
+
+```json
+{ "title": "Optional title" }
+```
+
+Returns `201` with `{ id, title, favorited, pinned, activeRunId, createdAt, updatedAt }`.
+
+`GET /v1/chats?q=&cursor=` — page size 30, cursor on `(updatedAt, id)`.
+
+`GET /v1/chats/:chatId/messages?cursor=` — newest first, page size 50.
+
+There is no public `GET /v1/chats/:chatId` or chat delete/patch. Manage those in the web app.
+
+## Send a turn
+
+`POST /v1/chats/:chatId/turns`
+
+```json
+{
+  "text": "Crop this image",
+  "model": "openrouter/free",
+  "clientIdempotencyKey": "unique-per-retry",
+  "planMode": false,
+  "attachmentIds": ["optional-attachment-id"]
+}
+```
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `text` | yes | 1–32,000 characters |
+| `model` | no | Must be `openrouter/free` if sent |
+| `clientIdempotencyKey` | yes | 8–128 chars. Same key + chat returns the first run |
+| `planMode` | no | Model writes a numbered plan and waits for approve before tools |
+| `attachmentIds` | no | Max 8. IDs from the app upload flow (`/api/uploads/complete`) |
+
+Returns `202`:
+
+```json
+{
+  "chatId": "...",
+  "messageId": "...",
+  "runId": "...",
+  "realtime": { "transport": "poll", "pollUrl": "/api/runs/..." }
+}
+```
+
+`realtime.transport` can be `trigger` when a Trigger public token is minted. Public clients should still poll `/v1`.
+
+## Chat-style completions
+
+`POST /v1/chat/completions`
+
+```json
+{
+  "model": "openrouter/free",
+  "chatId": "optional-existing-chat",
+  "clientIdempotencyKey": "optional-unique-per-retry",
+  "planMode": false,
+  "messages": [
+    { "role": "user", "content": "Generate a red square" }
+  ]
+}
+```
+
+Same `sendTurn` engine. Only `openrouter/free`. No stream, no paid fallback. If `chatId` is omitted, a chat is created. Last user (or last) message becomes the turn text. Returns the same `202` envelope.
+
+`clientIdempotencyKey` is optional here. On `/turns` it is required.
+
+## Poll a run
+
+`GET /v1/chats` is not enough. Poll:
+
+`GET /v1/runs/:runId`
+
+Statuses: `queued`, `thinking`, `working`, `waiting`, `stopping`, `complete`, `failed`, `cancelled`.
+
+Terminal: `complete`, `failed`, `cancelled`.
+
+Useful fields:
+
+- `assistant` — persisted assistant message + blocks when ready
+- `generatedAssets[]` — Magica media (`url`, optional `durableUrl`)
+- `waitpoint` — present when `status` is `waiting`
+- `errorCode` / `errorSafeMessage` — on failure
+
+## Waitpoints
+
+If `status` is `waiting`, read `waitpoint` (`kind`: `plan`, `options`, `questions`, `credit`, `media`).
+
+`POST /v1/runs/:runId/waitpoints/:token/resume`
+
+```json
+{
+  "resumeKey": "...",
+  "decision": "approved",
+  "choiceId": "optional",
+  "answers": { "question-id": "optional free text" }
+}
+```
+
+| Field | When |
+| --- | --- |
+| `resumeKey` | Always. From `waitpoint.resumeKey` |
+| `decision` | `approved` or `rejected` |
+| `choiceId` | `options` waitpoints |
+| `answers` | `questions` waitpoints |
+
+Duplicate resume returns the first success. Expired waitpoints return `WAITPOINT_EXPIRED` — send a new message. Waitpoints expire after **30 minutes**.
+
+Plan mode: approve to let tools run; reject cancels that plan pause.
